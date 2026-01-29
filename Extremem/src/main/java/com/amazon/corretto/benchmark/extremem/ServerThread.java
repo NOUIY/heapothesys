@@ -58,7 +58,10 @@ class ServerThread extends ExtrememThread {
       this.accumulator = accumulator;
       this.alloc_accumulator = alloc_accumulator;
       this.garbage_accumulator = garbage_accumulator;
-      this.history = new ServerLog(this, LifeSpan.NearlyForever, config.ResponseTimeMeasurements());
+      this.history = new ServerLog(this, LifeSpan.NearlyForever, config.ResponseTimeMeasurements(),
+                                   config.DumpSalesTransactionResponseTimes(), config.DumpBrowsingHistoryResponseTimes(),
+                                   config.DumpCustomerReplacementResponseTimes(), config.DumpProductReplacementResponseTimes(),
+                                   config.DumpServerDoNothingResponseTimes());
 
       // Account for reference fields label, all_products,
       // all_customers, sales_queue, browsing_queue,
@@ -92,8 +95,13 @@ class ServerThread extends ExtrememThread {
     while (true) {
       // If the simulation will have ended before we wake up, don't
       // even bother to sleep.
-      if (next_release_time.compare(end_simulation_time) >= 0)
+      if (next_release_time.compare(end_simulation_time) >= 0) {
+        // Wait one period beyond end simulation time to make sure all Customer and Server  work is completed
+        // before we begin report generation.
+        AbsoluteTime end_execution_time = end_simulation_time.addRelative(this, config.LongestPeriod());
+        end_execution_time.sleep(this);
         break;
+      }
 
       AbsoluteTime now = next_release_time.sleep(this);
       now.garbageFootprint(this);
@@ -237,7 +245,7 @@ class ServerThread extends ExtrememThread {
       next_release_time.changeLifeSpan(this, LifeSpan.TransientShort);
     }
     Trace.msg(2, "Server ", label, " terminating.  Time is up.");
-
+    history.prepareToReport(getLabel());
     // We accumulate accumulator even if reporting individual threads
     accumulator.accumulate(history);
     if (config.ReportIndividualThreads())

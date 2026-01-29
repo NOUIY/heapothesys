@@ -67,7 +67,10 @@ class CustomerThread extends ExtrememThread {
     this.alloc_accumulator = alloc_accumulator;
     this.garbage_accumulator = garbage_accumulator;
     
-    history = new CustomerLog(this, LifeSpan.NearlyForever, config.ResponseTimeMeasurements());
+    history = new CustomerLog(this, LifeSpan.NearlyForever, config.ResponseTimeMeasurements(),
+                              config.DumpPreparationResponseTimes(), config.DumpPurchaseResponseTimes(),
+                              config.DumpSaveForLaterResponseTimes(), config.DumpAbandonmentResponseTimes(),
+                              config.DumpCustomerDoNothingResponseTimes());
     
     // Account for 12 reference fields: label, all_customers,
     // all_products, next_release_time, start_logging_time, end_simulation_time,
@@ -90,10 +93,14 @@ class CustomerThread extends ExtrememThread {
   public void runExtreme() {
     boolean logging = false;
     while (true) {
-      // If the simulation will have ended before we wake up, don't
-      // even bother to sleep.
-      if (next_release_time.compare(end_simulation_time) >= 0)
+      // If the simulation will have ended before we wake up, don't bother to trigger next transaction
+      if (next_release_time.compare(end_simulation_time) >= 0) {
+        // Wait one period beyond end simulation time to make sure all Customer and Server work is completed
+        // before we begin report generation.
+        AbsoluteTime end_execution_time = end_simulation_time.addRelative(this, config.LongestPeriod());
+        end_execution_time.sleep(this);
         break;
+      }
 
       AbsoluteTime now = next_release_time.sleep(this);
       Customer customer = all_customers.selectRandomCustomer(this);
@@ -329,7 +336,7 @@ class CustomerThread extends ExtrememThread {
       next_release_time = next_release_time.addRelative(this, this.period);
     }
     Trace.msg(2, "Customer thread ", label, " terminating.  Time is up.");
-
+    history.prepareToReport("Customer" + getLabel());
     // We accumulate accumulator even if reporting individual threads
     accumulator.accumulate(history);
     if (config.ReportIndividualThreads())
